@@ -1,166 +1,148 @@
-const express = require('express');
-const app = express();
-
-app.get('/', (req, res) => {
-  res.send(`
+res.send(`
 <html>
 <head>
-  <title>Fingerprint Password</title>
+  <title>Fingerprint Login Demo</title>
   <style>
-    body { font-family: Arial; padding: 40px; text-align: center; background: #f5f5f5; }
-    .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    button { background: #007bff; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 8px; cursor: pointer; margin: 20px 0; }
-    button:disabled { background: #ccc; cursor: not-allowed; }
-    .password { background: #e9ecef; padding: 15px; margin: 20px 0; border-radius: 5px; font-family: monospace; font-size: 16px; word-break: break-all; }
-    .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
-    .success { background: #d4edda; color: #155724; }
-    .error { background: #f8d7da; color: #721c24; }
+    body { font-family: Arial; background: #f5f5f5; padding: 40px; }
+    .box { background: #fff; padding: 25px; border-radius: 10px; width: 450px; margin: 20px auto;
+           box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    button { padding: 12px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; }
+    .success { color: #155724; background: #d4edda; padding: 10px; border-radius: 5px; }
+    .error { color: #721c24; background: #f8d7da; padding: 10px; border-radius: 5px; }
+    pre { background: #eee; padding: 10px; font-size: 14px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🔐 Fingerprint Password Generator</h1>
-    <p>Touch your fingerprint sensor to generate a consistent password</p>
-    
-    <button onclick="generatePassword()" id="generateBtn">Touch Fingerprint Sensor</button>
-    
-    <div id="status" class="status"></div>
-    
-    <div id="passwordDisplay" style="display: none;">
-      <h3>Your Fingerprint Password:</h3>
-      <div id="password" class="password"></div>
-      <p><em>This password will be the same every time you use the same fingerprint</em></p>
-    </div>
 
-    <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
-      <h4>How it works:</h4>
-      <p>• Each fingerprint generates a unique, consistent password</p>
-      <p>• Same fingerprint = Same password every time</p>
-      <p>• Different fingerprint = Different password</p>
-    </div>
-  </div>
+<h1 style="text-align:center">🔐 Fingerprint WebAuthn Demo</h1>
 
-  <script>
-    async function generatePassword() {
-      const btn = document.getElementById('generateBtn');
-      const status = document.getElementById('status');
-      const passwordDisplay = document.getElementById('passwordDisplay');
-      
-      btn.disabled = true;
-      status.textContent = '🔍 Checking fingerprint sensor...';
-      status.className = 'status';
+<div class="box">
+  <h2>1️⃣ Register Fingerprint</h2>
+  <p>This creates a credential and saves it.</p>
+  <button onclick="register()">Register</button>
+  <div id="regStatus"></div>
+</div>
 
-      try {
-        // Check if WebAuthn is available
-        if (!window.PublicKeyCredential) {
-          throw new Error('Fingerprint not supported in this browser');
+<div class="box">
+  <h2>2️⃣ Authenticate & Generate Same Password</h2>
+  <p>This uses stored credential ID to always return same password.</p>
+  <button onclick="authenticate()">Authenticate</button>
+  <div id="authStatus"></div>
+
+  <h3>Password:</h3>
+  <pre id="password"></pre>
+</div>
+
+<script>
+  // Utility: convert array buffer → array
+  function bufToArr(buf) {
+    return Array.from(new Uint8Array(buf));
+  }
+
+  // Create password from rawId (consistent)
+  function makePassword(rawIdArr) {
+    let hash = 0;
+    rawIdArr.forEach(n => {
+      hash = ((hash << 5) - hash) + n;
+      hash |= 0;
+    });
+
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
+    let pwd = "";
+    let seed = Math.abs(hash);
+
+    for (let i = 0; i < 12; i++) {
+      seed = (seed * 16807) % 2147483647;
+      pwd += chars[seed % chars.length];
+    }
+    return pwd;
+  }
+
+  // ---------------------------
+  // 1️⃣ REGISTER FINGERPRINT
+  // ---------------------------
+  async function register() {
+    const regStatus = document.getElementById("regStatus");
+    regStatus.innerHTML = "";
+
+    try {
+      const challenge = new TextEncoder().encode("fixed-challenge-123");
+
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "Demo", id: "localhost" },
+          user: {
+            id: new TextEncoder().encode("user123"),
+            name: "test@example.com",
+            displayName: "User"
+          },
+          pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required"
+          },
+          timeout: 60000,
+          attestation: "none"
         }
+      });
 
-        const isAvailable = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-        if (!isAvailable) {
-          throw new Error('No fingerprint sensor available on this device');
-        }
+      const rawId = bufToArr(credential.rawId);
 
-        status.textContent = '👆 Touch fingerprint sensor now...';
+      // Save for later auth
+      localStorage.setItem("credentialId", JSON.stringify(rawId));
 
-        // Generate consistent challenge (same every time)
-        const challenge = new TextEncoder().encode("fingerprint-password-challenge-constant");
-        
-        // Real WebAuthn fingerprint authentication
-        const credential = await navigator.credentials.create({
-  publicKey: {
-    challenge: challenge,
-    rp: {
-      name: "Fingerprint Password Generator",
-      id: "localhost"   // ⭐ FIXED
-    },
-    user: {
-      id: new TextEncoder().encode("user-id-constant"),
-      name: "fingerprint@password.com",
-      displayName: "Fingerprint User"
-    },
-    pubKeyCredParams: [
-      { alg: -7, type: "public-key" }
-    ],
-    timeout: 60000,
-    attestation: "none",  // ⭐ FIXED
-    authenticatorSelection: {
-      authenticatorAttachment: "platform",
-      userVerification: "required"
+      regStatus.innerHTML =
+        '<div class="success">✅ Registered & credential saved!</div>';
+
+    } catch (err) {
+      regStatus.innerHTML =
+        '<div class="error">❌ ' + err.message + '</div>';
     }
   }
-});
 
+  // ---------------------------
+  // 2️⃣ AUTHENTICATE
+  // ---------------------------
+  async function authenticate() {
+    const authStatus = document.getElementById("authStatus");
+    const passBox = document.getElementById("password");
+    authStatus.innerHTML = "";
+    passBox.innerHTML = "";
 
-        // Convert credential to consistent password
-        const rawIdArray = Array.from(new Uint8Array(credential.rawId));
-        
-        // Create password from fingerprint data
-        const password = createPasswordFromFingerprint(rawIdArray);
-        
-        // Display the password
-        document.getElementById('password').textContent = password;
-        passwordDisplay.style.display = 'block';
-        
-        status.textContent = '✅ Fingerprint password generated!';
-        status.className = 'status success';
-        
-        console.log('Fingerprint Password:', password);
-        console.log('Raw Credential ID:', rawIdArray);
+    try {
+      const savedRawId = JSON.parse(localStorage.getItem("credentialId"));
+      if (!savedRawId) throw new Error("No credential registered!");
 
-      } catch (error) {
-        status.textContent = '❌ ' + error.message;
-        status.className = 'status error';
-        console.error('Error:', error);
-      } finally {
-        btn.disabled = false;
-      }
+      const allowCred = [{
+        id: new Uint8Array(savedRawId).buffer,
+        type: "public-key"
+      }];
+
+      const challenge = new Uint8Array([1,2,3,4]); // arbitrary
+
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: allowCred,
+          userVerification: "required"
+        }
+      });
+
+      const rawIdArr = bufToArr(assertion.rawId);
+      const password = makePassword(rawIdArr);
+
+      authStatus.innerHTML =
+        '<div class="success">✅ Authentication success!</div>';
+      passBox.textContent = password;
+
+    } catch (err) {
+      authStatus.innerHTML =
+        '<div class="error">❌ ' + err.message + '</div>';
     }
+  }
+</script>
 
-    function createPasswordFromFingerprint(rawIdArray) {
-      // Convert fingerprint data to a consistent password
-      let hash = 0;
-      for (let i = 0; i < rawIdArray.length; i++) {
-        hash = ((hash << 5) - hash) + rawIdArray[i];
-        hash = hash & hash; // Convert to 32-bit integer
-      }
-      
-      // Create password with letters, numbers, and symbols
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
-      let password = '';
-      
-      // Use hash to generate consistent password
-      let seed = Math.abs(hash);
-      for (let i = 0; i < 12; i++) {
-        seed = (seed * 9301 + 49297) % 233280;
-        const random = seed / 233280;
-        password += chars[Math.floor(random * chars.length)];
-      }
-      
-      return password;
-    }
-
-    // Test if same fingerprint gives same password
-    let lastPassword = '';
-    window.testConsistency = async function() {
-      await generatePassword();
-      const currentPassword = document.getElementById('password').textContent;
-      
-      if (lastPassword && currentPassword === lastPassword) {
-        console.log('✅ SAME PASSWORD - Fingerprint consistency verified!');
-      } else if (lastPassword) {
-        console.log('❌ DIFFERENT PASSWORD - Used different fingerprint');
-      }
-      
-      lastPassword = currentPassword;
-    }
-  </script>
 </body>
 </html>
-  `);
-});
-
-app.listen(3000, () => {
-  console.log('🚀 Fingerprint Password Generator running at http://localhost:3000');
-  console.log('📱 Open on your phone and touch fingerprint sensor to generate password');
-});
+`);
