@@ -68,28 +68,29 @@ app.get('/', (req, res) => {
         
         // Real WebAuthn fingerprint authentication
         const credential = await navigator.credentials.create({
-          publicKey: {
-            challenge: challenge,
-            rp: {
-              name: "Fingerprint Password Generator",
-              id: window.location.hostname
-            },
-            user: {
-              id: new TextEncoder().encode("user-id-constant"),
-              name: "fingerprint@password.com",
-              displayName: "Fingerprint User"
-            },
-            pubKeyCredParams: [
-              { alg: -7, type: "public-key" }  // ES256
-            ],
-            timeout: 60000,
-            attestation: "direct",
-            authenticatorSelection: {
-              authenticatorAttachment: "platform",
-              userVerification: "required"
-            }
-          }
-        });
+  publicKey: {
+    challenge: challenge,
+    rp: {
+      name: "Fingerprint Password Generator",
+      id: "localhost"   // ⭐ FIXED
+    },
+    user: {
+      id: new TextEncoder().encode("user-id-constant"),
+      name: "fingerprint@password.com",
+      displayName: "Fingerprint User"
+    },
+    pubKeyCredParams: [
+      { alg: -7, type: "public-key" }
+    ],
+    timeout: 60000,
+    attestation: "none",  // ⭐ FIXED
+    authenticatorSelection: {
+      authenticatorAttachment: "platform",
+      userVerification: "required"
+    }
+  }
+});
+
 
         // Convert credential to consistent password
         const rawIdArray = Array.from(new Uint8Array(credential.rawId));
